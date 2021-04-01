@@ -13,7 +13,6 @@ import org.apache.poi.ss.usermodel.Comment;
 import org.apache.poi.ss.usermodel.Drawing;
 import org.apache.poi.xssf.usermodel.XSSFClientAnchor;
 import org.apache.poi.xssf.usermodel.XSSFRichTextString;
-import org.springframework.util.CollectionUtils;
 
 import java.io.File;
 import java.io.OutputStream;
@@ -168,7 +167,7 @@ public class ExcelExporter {
 
             List<List<Object>> data = new LinkedList<>();
 
-            if (!CollectionUtils.isEmpty(sheet.getData())) {
+            if (isNotEmpty(sheet.getData())) {
                 for (Object datum : sheet.getData()) {
                     List<Object> cellValues = new ArrayList<>();
                     data.add(cellValues);

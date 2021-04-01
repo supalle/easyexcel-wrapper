@@ -1,16 +1,11 @@
 package com.supalle.easyexcel.wrapper;
 
+import cn.hutool.core.convert.Convert;
 import com.alibaba.excel.EasyExcel;
 import com.alibaba.excel.context.AnalysisContext;
-import com.alibaba.excel.converters.Converter;
-import com.alibaba.excel.converters.ConverterKeyBuild;
 import com.alibaba.excel.event.AnalysisEventListener;
-import com.alibaba.excel.exception.ExcelDataConvertException;
-import com.alibaba.excel.metadata.CellData;
-import com.alibaba.excel.metadata.GlobalConfiguration;
 import com.alibaba.excel.read.listener.ReadListener;
 import com.alibaba.excel.read.metadata.ReadSheet;
-import com.alibaba.excel.read.metadata.holder.ReadHolder;
 import lombok.Getter;
 import lombok.extern.slf4j.Slf4j;
 
@@ -24,12 +19,9 @@ import java.util.function.Supplier;
 import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 
-import static com.supalle.easyexcel.wrapper.Common.isEmpty;
-import static com.supalle.easyexcel.wrapper.Common.isNull;
-
 @Slf4j
 @Getter
-public class ExcelImporter {
+public class ExcelImporter2 {
 
     private final List<Sheet> sheets = new ArrayList<>();
 
@@ -38,26 +30,26 @@ public class ExcelImporter {
     private boolean autoCloseStream = true;
     private Function<String, Dict> defaultDictSupplier;
 
-    public static ExcelImporter create() {
-        return new ExcelImporter();
+    public static ExcelImporter2 create() {
+        return new ExcelImporter2();
     }
 
-    public ExcelImporter inFile(File inFile) {
+    public ExcelImporter2 inFile(File inFile) {
         this.inFile = inFile;
         return this;
     }
 
-    public ExcelImporter inputStream(InputStream inputStream) {
+    public ExcelImporter2 inputStream(InputStream inputStream) {
         this.inputStream = inputStream;
         return this;
     }
 
-    public ExcelImporter defaultDictSupplier(Function<String, Dict> defaultDictSupplier) {
+    public ExcelImporter2 defaultDictSupplier(Function<String, Dict> defaultDictSupplier) {
         this.defaultDictSupplier = defaultDictSupplier;
         return this;
     }
 
-    public ExcelImporter autoCloseStream(boolean autoCloseStream) {
+    public ExcelImporter2 autoCloseStream(boolean autoCloseStream) {
         this.autoCloseStream = autoCloseStream;
         return this;
     }
@@ -148,7 +140,7 @@ public class ExcelImporter {
     private ReadListener buildListener(Sheet sheet) {
 
 
-        return new AnalysisEventListener<Map<Integer, CellData>>() {
+        return new AnalysisEventListener<Map<Integer, String>>() {
 
             private List<Row<ExcelEntity.ExcelColumnMapping>> excelColumnMappings;
             private Supplier<?> entitySupplier;
@@ -214,7 +206,7 @@ public class ExcelImporter {
             }
 
             @Override
-            public void invoke(Map<Integer, CellData> cellDataMap, AnalysisContext context) {
+            public void invoke(Map<Integer, String> data, AnalysisContext context) {
                 Object obj = entitySupplier.get();
                 Row<Object> row = new Row<>(context.readRowHolder().getRowIndex(), obj);
                 this.rows.add(row);
@@ -223,45 +215,41 @@ public class ExcelImporter {
                     ExcelEntity.ExcelColumnMapping mapping = tuple.getData();
                     ExcelEntity.ExcelColumnImportMapping importMapping = mapping.getExcelColumnImportMapping();
 
-                    CellData cellData = cellDataMap.get(columnIndex);
-                    //String cellValue = data.get(columnIndex);
-                    if (importMapping.isRequired() && isEmpty(cellData)) {
+                    String cellValue = data.get(columnIndex);
+                    if (importMapping.isRequired() && (cellValue == null || cellValue.trim().length() == 0)) {
                         throw new ExcelException(String.format("第%d行的'%s'列不能为空", row.getIndex(), mapping.getHeadName()));
                     }
-                    if (importMapping.isJumpNull() && isNull(cellData)) {
+                    if (importMapping.isJumpNull() && cellValue == null) {
                         continue;
                     }
-                    if (importMapping.isJumpEmpty() && isEmpty(cellData)) {
+                    if (importMapping.isJumpEmpty() && (cellValue == null || cellValue.trim().length() == 0)) {
                         continue;
                     }
-//                    if (importMapping.isAutoTrim() && isNotEmpty(cellData)) {
-//
-//                    }
+                    if (importMapping.isAutoTrim() && cellValue != null) {
+                        cellValue = cellValue.trim();
+                    }
+
                     String dictName = mapping.getDict();
                     Dict.DictItem dictItem = null;
                     if (mapping.getDict() != null) {
                         Dict dict = dictMap.get(dictName);
                         Map<String, Dict.DictItem> itemMap = this.dictItemMap.get(columnIndex);
-                        String value = (String) doConvertToJavaObject(cellData, String.class, context, columnIndex);
-                        if (importMapping.isAutoTrim()) {
-                            value = value == null ? null : value.trim();
+                        if ((dictItem = itemMap.get(cellValue)) == null) {
+                            throw new ExcelException(String.format("列'%s'的字典值'%s'超出约定范围，可用字典'%s:%s'只包含%s", mapping.getHeadName(), cellValue, dictName, dict.getComment(), dict.getDictItems().toString()));
                         }
-                        if ((dictItem = itemMap.get(value)) == null) {
-                            throw new ExcelException(String.format("列'%s'的字典值'%s'超出约定范围，可用字典'%s:%s'只包含%s", mapping.getHeadName(), value, dictName, dict.getComment(), dict.getDictItems().toString()));
-                        }
-                        cellData = new CellData(dictItem.getValue());
+                        cellValue = dictItem.getValue();
                     }
                     if ((importMapping.getSetting() != null)) {
                         Function<String, ?> formatter = importMapping.getFormatter();
                         if (formatter != null) {
-                            String value = (String) doConvertToJavaObject(cellData, String.class, context, columnIndex);
-                            importMapping.getSetting().accept(obj, formatter.apply(value));
+                            if (importMapping.getSetting() != null)
+                                importMapping.getSetting().accept(obj, formatter.apply(cellValue));
                         } else {
                             Class<?> type = importMapping.getType();
                             if (Dict.DictItem.class.isAssignableFrom(type)) {
                                 importMapping.getSetting().accept(obj, dictItem);
                             } else {
-                                importMapping.getSetting().accept(obj, doConvertToJavaObject(cellData, type, context, columnIndex));
+                                importMapping.getSetting().accept(obj, Convert.convert(type, cellValue));
                             }
                         }
                     }
@@ -279,33 +267,6 @@ public class ExcelImporter {
                     rows = new LinkedList<>();
                 }
             }
-
-            /**
-             *
-             * @param cellData
-             * @param clazz
-             * @param context
-             * @param columnIndex
-             * @return
-             */
-            private Object doConvertToJavaObject(CellData cellData, Class clazz, AnalysisContext context, Integer columnIndex) {
-                ReadHolder currentReadHolder = context.currentReadHolder();
-                Map<String, Converter> converterMap = currentReadHolder.converterMap();
-                GlobalConfiguration globalConfiguration = currentReadHolder.globalConfiguration();
-                Integer rowIndex = context.readRowHolder().getRowIndex();
-                Converter converter = converterMap.get(ConverterKeyBuild.buildKey(clazz, cellData.getType()));
-                if (converter == null) {
-                    throw new ExcelDataConvertException(rowIndex, columnIndex, cellData, null,
-                            "Converter not found, convert " + cellData.getType() + " to " + clazz.getName());
-                }
-                try {
-                    return converter.convertToJavaData(cellData, null, globalConfiguration);
-                } catch (Exception e) {
-                    throw new ExcelDataConvertException(rowIndex, columnIndex, cellData, null,
-                            "Convert data " + cellData + " to " + clazz + " error ", e);
-                }
-            }
-
         };
     }
 
@@ -315,7 +276,7 @@ public class ExcelImporter {
 
     @Getter
     public static class Sheet<T> {
-        private ExcelImporter parent;
+        private ExcelImporter2 parent;
 
         private Pattern sheetNamePattern; // TODO
         private ExcelEntity<T> excelEntity;
@@ -323,7 +284,7 @@ public class ExcelImporter {
         private int block = 1;
         private Consumer<List<Row<T>>> handler;
 
-        public Sheet<T> parent(ExcelImporter parent) {
+        public Sheet<T> parent(ExcelImporter2 parent) {
             this.parent = parent;
             return this;
         }
