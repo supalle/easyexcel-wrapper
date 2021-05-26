@@ -161,7 +161,7 @@ public class ExcelImporter {
             @Override
             public void invokeHeadMap(Map<Integer, String> headMap, AnalysisContext context) {
                 List<ExcelEntity.ExcelColumnMapping> excelColumnMappings = sheet.getExcelEntity().getExcelColumnMappings();
-                Map<String, Integer> indexMap = headMap.entrySet().stream().collect(Collectors.toMap(e -> String.valueOf(e.getValue()).trim(), e -> e.getKey()));
+                Map<String, Integer> indexMap = headMap.entrySet().stream().collect(Collectors.toMap(e -> String.valueOf(e.getValue()).trim(), Map.Entry::getKey, (o1, o2) -> o1));
                 this.excelColumnMappings = new ArrayList<>(excelColumnMappings.size());
                 this.dictMap = new HashMap<>();
                 this.dictItemMap = new HashMap<>();
